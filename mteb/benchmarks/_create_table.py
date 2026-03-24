@@ -46,7 +46,7 @@ def _load_local_model_metas():
 
 def _safe_get_model_meta(name):
     try:
-        meta = _safe_get_model_meta(name)
+        meta = mteb.get_model_meta(name)
         # If registry returned a stub with no metadata, try local files
         if meta.n_parameters is None and meta.embed_dim is None:
             raise ValueError("empty metadata, try local cache")
@@ -64,6 +64,8 @@ def _safe_get_model_meta(name):
             release_date=data.get("release_date"),
             languages=data.get("languages"),
             n_parameters=data.get("n_parameters"),
+            n_active_parameters_override=data.get("n_active_parameters_override"),
+            n_embedding_parameters=data.get("n_embedding_parameters"),
             memory_usage_mb=data.get("memory_usage_mb"),
             max_tokens=data.get("max_tokens"),
             embed_dim=data.get("embed_dim"),
@@ -72,11 +74,17 @@ def _safe_get_model_meta(name):
             public_training_code=data.get("public_training_code"),
             public_training_data=data.get("public_training_data"),
             framework=data.get("framework", []),
+            reference=data.get("reference"),
             similarity_fn_name=data.get("similarity_fn_name"),
             use_instructions=data.get("use_instructions"),
             training_datasets=data.get("training_datasets"),
             adapted_from=data.get("adapted_from"),
             superseded_by=data.get("superseded_by"),
+            modalities=data.get("modalities", ["text"]),
+            model_type=data.get("model_type", ["dense"]),
+            citation=data.get("citation"),
+            contacts=data.get("contacts"),
+            experiment_kwargs=data.get("experiment_kwargs"),
         )
 
 if TYPE_CHECKING:
