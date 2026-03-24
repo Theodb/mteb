@@ -157,7 +157,7 @@ def _get_means_per_types(per_task: pd.DataFrame):
                 dict(
                     model_name=model_name,
                     task_type=task_type,
-                    score=scores[tasks].mean(skipna=False),
+                    score=scores[tasks].mean(skipna=True),
                 )
             )
     return pd.DataFrame.from_records(records)
@@ -209,8 +209,8 @@ def _create_summary_table_from_benchmark_results(
     ]
 
     # Calculate overall means
-    typed_mean = mean_per_type.mean(skipna=False, axis=1)
-    overall_mean = per_task.mean(skipna=False, axis=1)
+    typed_mean = mean_per_type.mean(skipna=True, axis=1)
+    overall_mean = per_task.mean(skipna=True, axis=1)
 
     # Build joint table
     joint_table = mean_per_type.copy()
@@ -446,8 +446,8 @@ def _create_summary_table_mean_public_private(
     ]
 
     # Calculate overall means
-    public_mean = per_task[public_task_name].mean(skipna=False, axis=1)
-    private_mean = per_task[private_task_name].mean(skipna=False, axis=1)
+    public_mean = per_task[public_task_name].mean(skipna=True, axis=1)
+    private_mean = per_task[private_task_name].mean(skipna=True, axis=1)
 
     # Build joint table
     joint_table = mean_per_type.copy()
@@ -687,7 +687,7 @@ def _create_summary_table_mean_task_type(
     ]
 
     # Calculate overall means
-    typed_mean = mean_per_type.mean(skipna=False, axis=1)
+    typed_mean = mean_per_type.mean(skipna=True, axis=1)
 
     # Build joint table
     joint_table = mean_per_type.copy()
