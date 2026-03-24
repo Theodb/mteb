@@ -8,8 +8,76 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import pandas as pd
 
+import json
+from pathlib import Path
+
 import mteb
+from mteb.cache import ResultCache
 from mteb.get_tasks import get_task, get_tasks
+from mteb.models.model_meta import ModelMeta
+
+_local_meta_cache: dict[str, ModelMeta] = {}
+_active_cache: ResultCache | None = None
+
+
+def set_active_cache(cache: ResultCache):
+    """Set the active ResultCache so local model_meta.json files can be found."""
+    global _active_cache
+    _active_cache = cache
+
+
+def _load_local_model_metas():
+    """Scan cache results dirs for model_meta.json and index by model name."""
+    if _local_meta_cache:
+        return
+    cache = _active_cache or ResultCache()
+    results_dir = cache.cache_path / "results"
+    if not results_dir.exists():
+        return
+    for meta_path in results_dir.glob("*/*/model_meta.json"):
+        try:
+            with meta_path.open() as f:
+                data = json.load(f)
+            name = data.get("name", "")
+            _local_meta_cache[name] = data
+        except Exception:
+            pass
+
+
+def _safe_get_model_meta(name):
+    try:
+        meta = _safe_get_model_meta(name)
+        # If registry returned a stub with no metadata, try local files
+        if meta.n_parameters is None and meta.embed_dim is None:
+            raise ValueError("empty metadata, try local cache")
+        return meta
+    except Exception:
+        _load_local_model_metas()
+        data = _local_meta_cache.get(name, {})
+        meta_name = data.get("name", name)
+        if "/" not in meta_name:
+            meta_name = f"custom/{meta_name}"
+        return ModelMeta(
+            name=meta_name,
+            revision=data.get("revision"),
+            loader=None,
+            release_date=data.get("release_date"),
+            languages=data.get("languages"),
+            n_parameters=data.get("n_parameters"),
+            memory_usage_mb=data.get("memory_usage_mb"),
+            max_tokens=data.get("max_tokens"),
+            embed_dim=data.get("embed_dim"),
+            license=data.get("license"),
+            open_weights=data.get("open_weights"),
+            public_training_code=data.get("public_training_code"),
+            public_training_data=data.get("public_training_data"),
+            framework=data.get("framework", []),
+            similarity_fn_name=data.get("similarity_fn_name"),
+            use_instructions=data.get("use_instructions"),
+            training_datasets=data.get("training_datasets"),
+            adapted_from=data.get("adapted_from"),
+            superseded_by=data.get("superseded_by"),
+        )
 
 if TYPE_CHECKING:
     from mteb.results.benchmark_results import BenchmarkResults
@@ -145,7 +213,7 @@ def _create_summary_table_from_benchmark_results(
     joint_table = joint_table.reset_index()
 
     # Add model metadata
-    model_metas = joint_table["model_name"].map(mteb.get_model_meta)
+    model_metas = joint_table["model_name"].map(_safe_get_model_meta)
     joint_table = joint_table[model_metas.notna()]
     joint_table["model_link"] = model_metas.map(lambda m: m.reference)
 
@@ -386,7 +454,7 @@ def _create_summary_table_mean_public_private(
     joint_table = joint_table.reset_index()
 
     # Add model metadata
-    model_metas = joint_table["model_name"].map(mteb.get_model_meta)
+    model_metas = joint_table["model_name"].map(_safe_get_model_meta)
     joint_table = joint_table[model_metas.notna()]
     joint_table["model_link"] = model_metas.map(lambda m: m.reference)
 
@@ -505,7 +573,7 @@ def _create_summary_table_mean_subset(
     joint_table = joint_table.reset_index()
 
     # Add model metadata
-    model_metas = joint_table["model_name"].map(mteb.get_model_meta)
+    model_metas = joint_table["model_name"].map(_safe_get_model_meta)
     joint_table = joint_table[model_metas.notna()]
     joint_table["model_link"] = model_metas.map(lambda m: m.reference)
 
@@ -622,7 +690,7 @@ def _create_summary_table_mean_task_type(
     joint_table = joint_table.reset_index()
 
     # Add model metadata
-    model_metas = joint_table["model_name"].map(mteb.get_model_meta)
+    model_metas = joint_table["model_name"].map(_safe_get_model_meta)
     joint_table = joint_table[model_metas.notna()]
     joint_table["model_link"] = model_metas.map(lambda m: m.reference)
 

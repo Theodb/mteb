@@ -4,6 +4,7 @@ import hashlib
 import itertools
 import json
 import logging
+import os
 import secrets
 import tempfile
 import time
@@ -187,7 +188,9 @@ def _filter_models(
     )
 
     models_to_keep = set()
+    registered_names = set()
     for model_meta in model_metas:
+        registered_names.add(model_meta.name)
         is_model_zero_shot = model_meta.is_zero_shot_on(task_select)
         if is_model_zero_shot is None:
             if zero_shot_setting in ["remove_unknown", "only_zero_shot"]:
@@ -196,6 +199,9 @@ def _filter_models(
             if zero_shot_setting == "only_zero_shot":
                 continue
         models_to_keep.add(model_meta.name)
+    # Include unregistered (custom/local) models that aren't in the MTEB registry
+    unregistered = set(model_names) - registered_names
+    models_to_keep.update(unregistered)
     return list(models_to_keep)
 
 
@@ -447,11 +453,40 @@ def get_leaderboard_app(
     app_start = time.time()
     logger.info("=== Starting leaderboard app initialization ===")
 
+    from mteb.benchmarks._create_table import set_active_cache
+    set_active_cache(cache)
+
     logger.info("Step 1/7: Loading all benchmark results...")
     load_start = time.time()
     all_results = cache._load_from_cache(rebuild=rebuild)
     load_time = time.time() - load_start
     logger.info(f"Step 1/7 complete: Loaded results in {load_time:.2f}s")
+
+    # Merge local cache results (user's own models) with remote/cached results
+    local_only = os.environ.get("MTEB_LOCAL_ONLY", "").strip() in ("1", "true", "yes")
+    local_results = cache.load_results(
+        require_model_meta=False,
+        include_remote=False,
+        only_main_score=True,
+    )
+    if local_results.model_results:
+        local_names = {mr.model_name for mr in local_results.model_results}
+        if local_only:
+            remote_kept = []
+            logger.info("MTEB_LOCAL_ONLY is set: showing only local models")
+        else:
+            remote_kept = [
+                mr
+                for mr in all_results.model_results
+                if mr.model_name not in local_names
+            ]
+        all_results = mteb.BenchmarkResults(
+            model_results=remote_kept + list(local_results.model_results)
+        )
+        logger.info(
+            f"Merged {len(local_results.model_results)} local model(s) into results "
+            f"(replacing any cached versions): {list(local_names)}"
+        )
 
     logger.info("Step 2/7: Fetching benchmarks...")
     bench_start = time.time()
