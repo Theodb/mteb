@@ -32,7 +32,39 @@
 </h3>
 
 
-## Installation
+## Fork: Local Results Support
+
+This fork adds support for displaying local/custom model results on the MTEB leaderboard via `mteb leaderboard --cache-path . --share`.
+
+**Changes from upstream:**
+- `_safe_get_model_meta()` fallback to load metadata from local `model_meta.json` files when models aren't in the MTEB registry
+- Merge local cache results into the leaderboard (with `MTEB_LOCAL_ONLY=1` env var to show only local models)
+- Allow unregistered/custom models to bypass the zero-shot filter
+
+### Installation
+
+```bash
+pip install git+https://github.com/Theodb/mteb.git@local-results
+```
+
+### Upgrading (syncing with upstream)
+
+```bash
+git clone -b local-results https://github.com/Theodb/mteb.git
+cd mteb
+git remote add upstream https://github.com/embeddings-benchmark/mteb.git
+git fetch upstream
+git merge upstream/main
+# resolve any conflicts, then:
+git push origin local-results
+
+# reinstall
+pip install --force-reinstall --no-deps git+https://github.com/Theodb/mteb.git@local-results
+```
+
+---
+
+## Installation (upstream)
 
 You can install mteb simply using pip or uv. For more on installation please see the [documentation](https://embeddings-benchmark.github.io/mteb/installation/).
 
