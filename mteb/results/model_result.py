@@ -161,15 +161,64 @@ class ModelResult(BaseModel):
     def select_tasks(self, tasks: Iterable[AbsTask]) -> ModelResult:
         """Select tasks from the ModelResult based on a list of AbsTask objects.
 
+        For aggregate tasks, if the aggregate result is not found directly,
+        it will look for child task results and combine them.
+
         Args:
             tasks: A sequence of AbsTask objects to select from the ModelResult.
         """
+        from mteb.abstasks.aggregated_task import AbsTaskAggregate
+
         task_name_to_task = {task.metadata.name: task for task in tasks}
-        new_task_results = [
-            task_res.validate_and_filter_scores(task_name_to_task[task_res.task_name])
-            for task_res in self.task_results
-            if task_res.task_name in task_name_to_task
-        ]
+        existing_task_names = {tr.task_name for tr in self.task_results}
+
+        new_task_results = []
+        for task_res in self.task_results:
+            if task_res.task_name in task_name_to_task:
+                new_task_results.append(
+                    task_res.validate_and_filter_scores(task_name_to_task[task_res.task_name])
+                )
+
+        # For aggregate tasks not found directly, try combining child task results
+        for task_name, task in task_name_to_task.items():
+            if task_name in existing_task_names:
+                continue
+            if not isinstance(task, AbsTaskAggregate):
+                continue
+            child_results = [
+                tr for tr in self.task_results
+                if tr.task_name in task.taskname_to_task
+            ]
+            if child_results:
+                try:
+                    agg_scores = task.task_results_to_scores(child_results)
+                    # Build flat scores directly since from_task_results
+                    # doesn't handle the "default" subset used by aggregates
+                    flat_scores = {}
+                    for split, hf_subset_scores in agg_scores.items():
+                        flat_scores[split] = []
+                        for hf_subset, hf_scores in hf_subset_scores.items():
+                            flat_scores[split].append({
+                                **hf_scores,
+                                "hf_subset": hf_subset,
+                                "languages": list(task.metadata.languages) if task.metadata.languages else [],
+                            })
+                    combined = TaskResult(
+                        dataset_revision=child_results[0].dataset_revision,
+                        task_name=task.metadata.name,
+                        mteb_version=child_results[0].mteb_version,
+                        scores=flat_scores,
+                        evaluation_time=sum(
+                            tr.evaluation_time for tr in child_results if tr.evaluation_time
+                        ) or None,
+                        kg_co2_emissions=None,
+                    )
+                    new_task_results.append(combined)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to combine child results for aggregate task {task_name}: {e}"
+                    )
+
         return type(self).model_construct(
             model_name=self.model_name,
             model_revision=self.model_revision,
