@@ -91,17 +91,15 @@ if TYPE_CHECKING:
     from mteb.results.benchmark_results import BenchmarkResults
 
 
+_registered_model_names: set[str] | None = None
+
+
 def _get_local_models(model_names: pd.Index) -> set[str]:
     """Return set of model names that are not in the MTEB registry (local/custom models)."""
-    local = set()
-    for name in model_names:
-        try:
-            meta = mteb.get_model_meta(name)
-            if meta.n_parameters is None and meta.embed_dim is None:
-                local.add(name)
-        except Exception:
-            local.add(name)
-    return local
+    global _registered_model_names
+    if _registered_model_names is None:
+        _registered_model_names = {m.name for m in mteb.get_model_metas()}
+    return set(model_names) - _registered_model_names
 
 
 def _mean_with_local_skipna(df: pd.DataFrame, axis: int = 1, local_models: set[str] | None = None) -> pd.Series:
