@@ -91,6 +91,29 @@ if TYPE_CHECKING:
     from mteb.results.benchmark_results import BenchmarkResults
 
 
+def _get_local_models(model_names: pd.Index) -> set[str]:
+    """Return set of model names that are not in the MTEB registry (local/custom models)."""
+    local = set()
+    for name in model_names:
+        try:
+            meta = mteb.get_model_meta(name)
+            if meta.n_parameters is None and meta.embed_dim is None:
+                local.add(name)
+        except Exception:
+            local.add(name)
+    return local
+
+
+def _mean_with_local_skipna(df: pd.DataFrame, axis: int = 1, local_models: set[str] | None = None) -> pd.Series:
+    """Compute mean: skipna=False for remote models, skipna=True for local models."""
+    result = df.mean(skipna=False, axis=axis)
+    if local_models:
+        local_mask = result.index.isin(local_models)
+        if local_mask.any():
+            result[local_mask] = df.loc[local_mask].mean(skipna=True, axis=axis)
+    return result
+
+
 def _borda_count(scores: pd.Series) -> pd.Series:
     n = len(scores)
     ranks = scores.rank(method="average", ascending=False)
@@ -145,7 +168,7 @@ def _get_embedding_size(embed_dim: int | list[int] | None) -> int | None:
     return None
 
 
-def _get_means_per_types(per_task: pd.DataFrame):
+def _get_means_per_types(per_task: pd.DataFrame, local_models: set[str] | None = None):
     task_names_per_type = defaultdict(list)
     for task_name in per_task.columns:
         task_type = get_task(task_name).metadata.type
@@ -153,11 +176,12 @@ def _get_means_per_types(per_task: pd.DataFrame):
     records = []
     for task_type, tasks in task_names_per_type.items():
         for model_name, scores in per_task.iterrows():
+            skipna = local_models is not None and model_name in local_models
             records.append(
                 dict(
                     model_name=model_name,
                     task_type=task_type,
-                    score=scores[tasks].mean(skipna=True),
+                    score=scores[tasks].mean(skipna=skipna),
                 )
             )
     return pd.DataFrame.from_records(records)
@@ -199,8 +223,10 @@ def _create_summary_table_from_benchmark_results(
     models_to_remove = list(per_task[to_remove].index)
     per_task = per_task.drop(models_to_remove, axis=0)
 
+    local_models = _get_local_models(per_task.index)
+
     # Calculate means by task type
-    mean_per_type = _get_means_per_types(per_task)
+    mean_per_type = _get_means_per_types(per_task, local_models=local_models)
     mean_per_type = mean_per_type.pivot(
         index="model_name", columns="task_type", values="score"
     )
@@ -209,8 +235,8 @@ def _create_summary_table_from_benchmark_results(
     ]
 
     # Calculate overall means
-    typed_mean = mean_per_type.mean(skipna=True, axis=1)
-    overall_mean = per_task.mean(skipna=True, axis=1)
+    typed_mean = _mean_with_local_skipna(mean_per_type, axis=1, local_models=local_models)
+    overall_mean = _mean_with_local_skipna(per_task, axis=1, local_models=local_models)
 
     # Build joint table
     joint_table = mean_per_type.copy()
@@ -436,8 +462,10 @@ def _create_summary_table_mean_public_private(
     models_to_remove = list(per_task[to_remove].index)
     per_task = per_task.drop(models_to_remove, axis=0)
 
+    local_models = _get_local_models(per_task.index)
+
     # Calculate means by task type
-    mean_per_type = _get_means_per_types(per_task)
+    mean_per_type = _get_means_per_types(per_task, local_models=local_models)
     mean_per_type = mean_per_type.pivot(
         index="model_name", columns="task_type", values="score"
     )
@@ -446,8 +474,8 @@ def _create_summary_table_mean_public_private(
     ]
 
     # Calculate overall means
-    public_mean = per_task[public_task_name].mean(skipna=True, axis=1)
-    private_mean = per_task[private_task_name].mean(skipna=True, axis=1)
+    public_mean = _mean_with_local_skipna(per_task[public_task_name], axis=1, local_models=local_models)
+    private_mean = _mean_with_local_skipna(per_task[private_task_name], axis=1, local_models=local_models)
 
     # Build joint table
     joint_table = mean_per_type.copy()
@@ -554,8 +582,10 @@ def _create_summary_table_mean_subset(
     models_to_remove = list(per_task[to_remove].index)
     per_task = per_task.drop(models_to_remove, axis=0)
 
+    local_models = _get_local_models(per_task.index)
+
     # Calculate means by task type
-    mean_per_type = _get_means_per_types(per_task)
+    mean_per_type = _get_means_per_types(per_task, local_models=local_models)
     mean_per_type = mean_per_type.pivot(
         index="model_name", columns="task_type", values="score"
     )
@@ -677,8 +707,10 @@ def _create_summary_table_mean_task_type(
     models_to_remove = list(per_task[to_remove].index)
     per_task = per_task.drop(models_to_remove, axis=0)
 
+    local_models = _get_local_models(per_task.index)
+
     # Calculate means by task type
-    mean_per_type = _get_means_per_types(per_task)
+    mean_per_type = _get_means_per_types(per_task, local_models=local_models)
     mean_per_type = mean_per_type.pivot(
         index="model_name", columns="task_type", values="score"
     )
@@ -687,7 +719,7 @@ def _create_summary_table_mean_task_type(
     ]
 
     # Calculate overall means
-    typed_mean = mean_per_type.mean(skipna=True, axis=1)
+    typed_mean = _mean_with_local_skipna(mean_per_type, axis=1, local_models=local_models)
 
     # Build joint table
     joint_table = mean_per_type.copy()
